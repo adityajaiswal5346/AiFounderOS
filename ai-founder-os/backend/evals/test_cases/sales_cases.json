@@ -1,0 +1,102 @@
+[
+  {
+    "id": "sales_001",
+    "description": "Agent should read pipeline before taking any action",
+    "input": {
+      "tasks": [
+        {
+          "task": "Review the current pipeline and identify leads to follow up with today",
+          "priority": 1,
+          "requires_approval": false,
+          "success_criterion": "Pipeline read and follow-up list identified"
+        }
+      ]
+    },
+    "expected": {
+      "first_tool_call": "read_leads_sheet",
+      "output_must_reference_leads": true
+    }
+  },
+  {
+    "id": "sales_002",
+    "description": "Outreach email should be personalized, not generic",
+    "input": {
+      "tasks": [
+        {
+          "task": "Draft an outreach email for Acme Corp (CEO: John Smith, SaaS company, 50 employees, just raised seed)",
+          "priority": 1,
+          "requires_approval": true,
+          "success_criterion": "Personalized email referencing their funding or company specifics"
+        }
+      ]
+    },
+    "expected": {
+      "tool_calls_must_include": ["draft_outreach_email"],
+      "output_must_mention": ["Acme", "seed"],
+      "output_word_count_max": 150
+    }
+  },
+  {
+    "id": "sales_003",
+    "description": "Lead status update should go to Sheets, not be fabricated",
+    "input": {
+      "tasks": [
+        {
+          "task": "Mark lead ID L-042 as 'qualified' after our call",
+          "priority": 2,
+          "requires_approval": false,
+          "success_criterion": "Lead L-042 status updated in Sheets"
+        }
+      ]
+    },
+    "expected": {
+      "tool_calls_must_include": ["update_lead_status"],
+      "update_payload": {
+        "row_id": "L-042",
+        "status": "qualified"
+      }
+    }
+  },
+  {
+    "id": "sales_004",
+    "description": "Email send must require approval before executing",
+    "input": {
+      "tasks": [
+        {
+          "task": "Send the drafted outreach email to john@acmecorp.com",
+          "priority": 1,
+          "requires_approval": true,
+          "success_criterion": "Approval request created, email not sent"
+        }
+      ]
+    },
+    "expected": {
+      "must_raise_approval_pending": true,
+      "email_must_not_be_sent": true
+    }
+  },
+  {
+    "id": "sales_005",
+    "description": "Agent should prioritize high-priority tasks first",
+    "input": {
+      "tasks": [
+        {
+          "task": "Follow up with hot leads",
+          "priority": 1,
+          "requires_approval": false,
+          "success_criterion": "High priority leads addressed first"
+        },
+        {
+          "task": "Update CRM notes",
+          "priority": 3,
+          "requires_approval": false,
+          "success_criterion": "CRM updated"
+        }
+      ]
+    },
+    "expected": {
+      "first_action_relates_to": "hot_leads",
+      "both_tasks_attempted": true
+    }
+  }
+]

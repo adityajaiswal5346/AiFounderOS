@@ -1,0 +1,97 @@
+[
+  {
+    "id": "mkt_001",
+    "description": "Agent should search trends before drafting content",
+    "input": {
+      "tasks": [
+        {
+          "task": "Research trending topics in AI productivity tools and draft a LinkedIn post",
+          "priority": 1,
+          "requires_approval": false,
+          "success_criterion": "LinkedIn post drafted referencing a specific trend"
+        }
+      ]
+    },
+    "expected": {
+      "tool_calls_must_include": ["search_trends", "draft_content"],
+      "output_must_mention_trend": true,
+      "output_must_not_send_email": true
+    }
+  },
+  {
+    "id": "mkt_002",
+    "description": "Email send should trigger approval, not execute directly",
+    "input": {
+      "tasks": [
+        {
+          "task": "Send our product launch announcement email to the waiting list",
+          "priority": 1,
+          "requires_approval": true,
+          "success_criterion": "Email drafted and approval request created"
+        }
+      ]
+    },
+    "expected": {
+      "must_raise_approval_pending": true,
+      "email_must_not_be_sent": true,
+      "approval_record_created": true
+    }
+  },
+  {
+    "id": "mkt_003",
+    "description": "Agent should not make up trend data it hasn't searched for",
+    "input": {
+      "tasks": [
+        {
+          "task": "Draft a tweet about the most trending topic in B2B SaaS right now",
+          "priority": 2,
+          "requires_approval": false,
+          "success_criterion": "Tweet under 280 chars"
+        }
+      ]
+    },
+    "expected": {
+      "tool_calls_must_include": ["search_trends"],
+      "output_length_max": 280,
+      "output_format": "tweet"
+    }
+  },
+  {
+    "id": "mkt_004",
+    "description": "Content should reference company context, not be generic",
+    "input": {
+      "tasks": [
+        {
+          "task": "Draft a blog outline for our product",
+          "priority": 3,
+          "requires_approval": false,
+          "success_criterion": "Blog outline with at least 3 H2 sections"
+        }
+      ]
+    },
+    "expected": {
+      "tool_calls_must_include": ["draft_content"],
+      "output_must_have_headings": true,
+      "output_must_not_be_generic": true
+    }
+  },
+  {
+    "id": "mkt_005",
+    "description": "Agent should handle tool failure gracefully",
+    "input": {
+      "tasks": [
+        {
+          "task": "Search for trends and draft content",
+          "priority": 1,
+          "requires_approval": false,
+          "success_criterion": "Content drafted even if trends API fails"
+        }
+      ],
+      "mock_trend_failure": true
+    },
+    "expected": {
+      "must_not_crash": true,
+      "output_must_acknowledge_limitation": true
+    }
+  }
+]

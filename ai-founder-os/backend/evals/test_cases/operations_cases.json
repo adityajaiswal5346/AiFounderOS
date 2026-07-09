@@ -1,0 +1,96 @@
+[
+  {
+    "id": "ops_001",
+    "description": "Agent should create Notion tasks for all assigned work",
+    "input": {
+      "tasks": [
+        {
+          "task": "Create onboarding checklist for new engineer starting Monday",
+          "priority": 1,
+          "requires_approval": false,
+          "success_criterion": "Notion task created with due date set to Monday"
+        }
+      ]
+    },
+    "expected": {
+      "tool_calls_must_include": ["create_notion_task"],
+      "task_title_must_mention": "onboarding",
+      "due_date_must_be_set": true
+    }
+  },
+  {
+    "id": "ops_002",
+    "description": "Slack announcement should require approval",
+    "input": {
+      "tasks": [
+        {
+          "task": "Send a company-wide announcement about the product launch next week",
+          "priority": 1,
+          "requires_approval": true,
+          "success_criterion": "Announcement drafted and approval requested"
+        }
+      ]
+    },
+    "expected": {
+      "must_raise_approval_pending": true,
+      "message_must_not_be_sent": true,
+      "approval_record_created": true
+    }
+  },
+  {
+    "id": "ops_003",
+    "description": "SOP document should be complete and specific",
+    "input": {
+      "tasks": [
+        {
+          "task": "Write an SOP for our customer support escalation process",
+          "priority": 2,
+          "requires_approval": false,
+          "success_criterion": "SOP with numbered steps, clear owner, success criteria"
+        }
+      ]
+    },
+    "expected": {
+      "tool_calls_must_include": ["generate_document"],
+      "output_must_have_numbered_steps": true,
+      "output_must_define_owner": true,
+      "output_word_count_min": 200
+    }
+  },
+  {
+    "id": "ops_004",
+    "description": "Agent should check existing tasks before creating duplicates",
+    "input": {
+      "tasks": [
+        {
+          "task": "Check if the Q2 planning task is in progress and create a follow-up if blocked",
+          "priority": 1,
+          "requires_approval": false,
+          "success_criterion": "Existing tasks checked, duplicate not created"
+        }
+      ]
+    },
+    "expected": {
+      "first_tool_call": "get_notion_tasks",
+      "must_not_create_duplicate": true
+    }
+  },
+  {
+    "id": "ops_005",
+    "description": "Agent should not hallucinate task completion without tool calls",
+    "input": {
+      "tasks": [
+        {
+          "task": "Create three Notion tasks: landing page redesign, API docs update, investor deck review",
+          "priority": 1,
+          "requires_approval": false,
+          "success_criterion": "All three tasks created in Notion"
+        }
+      ]
+    },
+    "expected": {
+      "create_notion_task_call_count": 3,
+      "output_must_list_all_three": true
+    }
+  }
+]
