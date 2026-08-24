@@ -22,11 +22,8 @@ from typing import Any
 from unittest.mock import AsyncMock, patch, MagicMock
 from dotenv import load_dotenv
 
-# Override primary model for evaluation suite execution to avoid hitting production quota
-if "LLM_EVAL_MODEL" in os.environ:
-    os.environ["LLM_PRIMARY_MODEL"] = os.environ["LLM_EVAL_MODEL"]
-elif "LLM_PRIMARY_MODEL" not in os.environ:
-    os.environ["LLM_PRIMARY_MODEL"] = "gemini-3.1-flash-lite"
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+os.environ["LLM_PRIMARY_MODEL"] = os.getenv("LLM_EVAL_MODEL", "gemini-3.1-flash-lite")
 
 # Mock optional packages before importing graph dependencies
 sys.modules["slack_sdk"] = MagicMock()
