@@ -140,7 +140,8 @@ async def run_single_eval(
                         text_items = []
                         for item in outputs:
                             if isinstance(item, dict):
-                                text_items.append(item.get("summary") or item.get("content") or str(item))
+                                val = item.get("summary") or item.get("content") or item
+                                text_items.append(str(val) if not isinstance(val, str) else val)
                             else:
                                 text_items.append(str(item))
                         result["output"] = "\n\n".join(text_items)
