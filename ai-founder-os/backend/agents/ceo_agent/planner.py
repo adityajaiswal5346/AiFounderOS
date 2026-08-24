@@ -1,88 +1,77 @@
-"""
-CEO Agent — Planner
 
-Generates a prioritized daily task list for each specialist agent based on:
-- Company goals stored in long-term memory
-- Outcomes from the previous day
-- Current date / calendar context
-"""
 
-from __future__ import annotations
 
-from datetime import date
-from typing import Any
 
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
+import os
+import json
+from sqlalchemy.ext.asyncio import AsyncSession
+from observability.tracing import observe
+from langchain_core.messages import SystemMessage, HumanMessage
 
-from memory.long_term import get_company_profile, get_recent_outcomes
+from llm.provider import get_model
+from .schemas import DailyPlan
+from .prompts import PLANNER_SYSTEM_PROMPT, build_planning_prompt
+from db.repository import task_repository, outcome_repository, memory_repository
 
-PLANNER_PROMPT = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """You are the CEO of an early-stage startup. Your job is to create a focused,
-prioritized task list for today for each of your three department heads:
-Marketing, Sales, and Operations.
 
-Company profile:
-{company_profile}
+async def get_roadmap(db: AsyncSession | None) -> str:
+    if not db:
+        return "No roadmap set yet."
+    try:
+        roadmap_memory = await memory_repository.get_latest_memory(db, key="roadmap")
+        return roadmap_memory.value if roadmap_memory else "No roadmap set yet."
+    except Exception:
+        return "No roadmap set yet."
 
-Yesterday's outcomes:
-{recent_outcomes}
 
-Today's date: {today}
+async def get_recent_outcomes_text(db: AsyncSession | None) -> list[str]:
+    if not db:
+        return []
+    try:
+        outcomes = await outcome_repository.get_recent_outcomes(db, limit=5)
+        return [o.result_summary for o in outcomes]
+    except Exception:
+        return []
 
-Rules:
-- Maximum 3 tasks per agent
-- Each task must have a clear success criterion
-- Flag any task that requires external approval (e.g., sending emails, publishing content)
-- If agents have conflicting resource needs, note them for arbitration
 
-Respond in JSON with the schema:
-{{
-  "marketing": [{{"task": "...", "priority": 1, "requires_approval": false, "success_criterion": "..."}}],
-  "sales": [...],
-  "operations": [...]
-}}""",
-        ),
-        ("human", "Generate today's task plan."),
+async def get_pending_tasks_text(db: AsyncSession | None) -> list[str]:
+    if not db:
+        return []
+    try:
+        pending = await task_repository.get_pending_tasks(db)
+        return [f"[{t.agent}] {t.description}" for t in pending]
+    except Exception:
+        return []
+
+
+@observe(name="ceo_generate_daily_plan")
+async def generate_daily_plan(db: AsyncSession) -> DailyPlan:
+    roadmap = await get_roadmap(db)
+    outcomes = await get_recent_outcomes_text(db)
+    pending = await get_pending_tasks_text(db)
+
+    user_prompt = build_planning_prompt(roadmap, outcomes, pending)
+
+    model = get_model(temperature=0.0)
+    structured_llm = model.with_structured_output(DailyPlan)
+    
+    messages = [
+        SystemMessage(content=PLANNER_SYSTEM_PROMPT),
+        HumanMessage(content=user_prompt)
     ]
-)
+    
+    plan = await structured_llm.ainvoke(messages)
+    return plan
 
-
-async def generate_daily_tasks(
-    llm: ChatOpenAI | None = None,
-) -> dict[str, list[dict[str, Any]]]:
-    """
-    Generate a prioritized daily task list for all specialist agents.
-
-    Returns:
-        dict mapping agent names to their task lists
-    """
-    if llm is None:
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
-
-    company_profile = await get_company_profile()
-    recent_outcomes = await get_recent_outcomes(days=1)
-
-    chain = PLANNER_PROMPT | llm
-    response = await chain.ainvoke(
-        {
-            "company_profile": company_profile,
-            "recent_outcomes": recent_outcomes,
-            "today": date.today().isoformat(),
-        }
-    )
-
-    # Parse JSON response
-    import json
-
-    content = response.content
-    # Strip markdown code fences if present
-    if content.startswith("```"):
-        content = content.split("```")[1]
-        if content.startswith("json"):
-            content = content[4:]
-
-    return json.loads(content.strip())
+@observe(name="ceo_persist_daily_plan")
+async def persist_daily_plan(db: AsyncSession, plan: DailyPlan) -> list:
+    created_tasks = []
+    for task in plan.tasks:
+        created = await task_repository.create_task(
+            db,
+            agent_name=task.agent_name,
+            title=task.title,
+            description=task.description,
+        )
+        created_tasks.append(created)
+    return created_tasks

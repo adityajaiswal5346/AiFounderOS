@@ -15,8 +15,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.language_models.chat_models import BaseChatModel
+
+from llm.provider import get_model
+from observability.tracing import observe
 
 DIGEST_PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -38,11 +41,18 @@ Operations Agent Output:
 Pending Approvals:
 {pending_approvals}
 
+Conflicts Detected:
+{conflicts}
+
+Conflict Resolutions / Recommendations:
+{resolutions}
+
 Write a founder digest with these sections:
 1. **Today's Wins** (bullet points, max 5)
 2. **Needs Your Attention** (approvals or blockers requiring action)
 3. **Key Numbers** (metrics moved today, if any)
-4. **Tomorrow's Focus** (1-2 sentences)
+4. **Conflicts & Resolutions** (summarize any detected conflicts and the arbitration decisions)
+5. **Tomorrow's Focus** (1-2 sentences)
 
 Keep the total digest under 300 words.""",
         ),
@@ -51,10 +61,13 @@ Keep the total digest under 300 words.""",
 )
 
 
+@observe(name="ceo_synthesize_digest")
 async def synthesize_digest(
     agent_outputs: dict[str, Any],
     pending_approvals: list[dict[str, Any]],
-    llm: ChatOpenAI | None = None,
+    conflicts: list[dict[str, Any]] | None = None,
+    resolutions: list[dict[str, Any]] | None = None,
+    llm: BaseChatModel | None = None,
 ) -> dict[str, str]:
     """
     Synthesize a daily digest from all agent outputs.
@@ -62,12 +75,14 @@ async def synthesize_digest(
     Args:
         agent_outputs: dict with keys 'marketing', 'sales', 'operations'
         pending_approvals: list of approval requests awaiting founder action
+        conflicts: optional list of detected conflicts
+        resolutions: optional list of arbitration resolutions
 
     Returns:
         dict with 'markdown' (formatted digest) and 'raw' (plain text)
     """
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+        llm = get_model(temperature=0.3)
 
     chain = DIGEST_PROMPT | llm
 
@@ -83,6 +98,12 @@ async def synthesize_digest(
                 )
                 if pending_approvals
                 else "None"
+            ),
+            "conflicts": (
+                "\n".join(str(c) for c in conflicts) if conflicts else "None"
+            ),
+            "resolutions": (
+                "\n".join(str(r) for r in resolutions) if resolutions else "None"
             ),
         }
     )

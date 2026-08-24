@@ -1,86 +1,54 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import useSWR from "swr";
+import { fetcher } from "../../lib/api";
+import { Card, PageHeader, Badge } from "../../components/ui";
 import ReactMarkdown from "react-markdown";
 
-interface Digest {
-  run_id: string;
-  date: string;
-  markdown: string;
-  pending_approval_count: number;
-  created_at: string;
-}
-
 export default function DashboardPage() {
-  const [digest, setDigest] = useState<Digest | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchDigest() {
-      try {
-        const response = await fetch("http://localhost:8000/api/digest/latest");
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        const data = await response.json();
-        setDigest(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch digest");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchDigest();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-gray-500">Loading daily digest...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <p className="text-red-600 font-semibold">Error</p>
-          <p className="text-gray-600 text-sm">{error}</p>
-          <p className="text-gray-500 text-xs mt-2">
-            Make sure the backend is running on http://localhost:8000
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!digest) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-gray-500">No digest available yet. Run the daily cycle first.</p>
-      </div>
-    );
-  }
+  const { data, error, isLoading } = useSWR("/digest/latest", fetcher);
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Daily Digest</h1>
-        <p className="text-gray-600 text-sm mt-1">
-          {digest.date} • Run ID: {digest.run_id}
-        </p>
-        {digest.pending_approval_count > 0 && (
-          <div className="mt-3 inline-block bg-yellow-100 border border-yellow-400 text-yellow-800 px-3 py-1 rounded text-sm">
-            ⚠️ {digest.pending_approval_count} pending approval{digest.pending_approval_count > 1 ? "s" : ""}
-          </div>
-        )}
-      </header>
+    <div style={{ animation: "fadeIn 0.5s ease-out" }}>
+      <PageHeader 
+        title="CEO Daily Digest" 
+        subtitle="Your morning briefing synthesized from all specialist agents." 
+      />
 
-      <div className="bg-white shadow rounded-lg p-6 prose prose-sm max-w-none">
-        <ReactMarkdown>{digest.markdown}</ReactMarkdown>
-      </div>
+      {isLoading && <p style={{ color: "var(--text-muted)" }}>Loading digest...</p>}
+      {error && (
+        <Card style={{ borderColor: "var(--danger)" }}>
+          <p style={{ color: "var(--danger)" }}>Failed to load digest: {error.message}</p>
+        </Card>
+      )}
+
+      {data && (
+        <div style={{ display: "grid", gap: "2rem" }}>
+          <Card className="glass-panel">
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1.5rem" }}>
+              <h2 style={{ fontSize: "1.25rem", fontWeight: "600", margin: 0 }}>Latest Synthesis</h2>
+              <Badge variant="primary">{new Date(data.created_at).toLocaleDateString()}</Badge>
+            </div>
+            
+            <div className="prose">
+              <ReactMarkdown>{data.digest}</ReactMarkdown>
+            </div>
+          </Card>
+
+          {data.conflicts && data.conflicts.length > 0 && (
+            <Card style={{ borderColor: "var(--warning)", background: "rgba(245, 158, 11, 0.05)" }}>
+              <h3 style={{ color: "var(--warning)", marginTop: 0, marginBottom: "1rem" }}>Detected Conflicts</h3>
+              <ul style={{ paddingLeft: "1.5rem", margin: 0, color: "var(--text-secondary)" }}>
+                {data.conflicts.map((conflict: any, idx: number) => (
+                  <li key={idx} style={{ marginBottom: "0.5rem" }}>
+                    <strong>{conflict.severity.toUpperCase()}:</strong> {conflict.description}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }

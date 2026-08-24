@@ -11,8 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.language_models.chat_models import BaseChatModel
+
+from llm.provider import get_model
+from observability.tracing import observe
 
 ARBITRATION_PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -47,9 +50,10 @@ Respond in JSON:
 )
 
 
+@observe(name="ceo_arbitrate_conflicts")
 async def arbitrate_conflicts(
     conflicts: list[dict[str, Any]],
-    llm: ChatOpenAI | None = None,
+    llm: BaseChatModel | None = None,
 ) -> list[dict[str, Any]]:
     """
     Arbitrate a list of conflicts between agents.
@@ -64,7 +68,7 @@ async def arbitrate_conflicts(
         return []
 
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
+        llm = get_model(temperature=0.0)
 
     chain = ARBITRATION_PROMPT | llm
 
@@ -81,6 +85,18 @@ async def arbitrate_conflicts(
         import json
 
         content = response.content
+        if isinstance(content, list):
+            text_parts = []
+            for item in content:
+                if isinstance(item, str):
+                    text_parts.append(item)
+                elif isinstance(item, dict) and "text" in item:
+                    text_parts.append(item["text"])
+            content = "\n".join(text_parts)
+        elif not isinstance(content, str):
+            content = str(content)
+
+        content = content.strip()
         if content.startswith("```"):
             content = content.split("```")[1]
             if content.startswith("json"):

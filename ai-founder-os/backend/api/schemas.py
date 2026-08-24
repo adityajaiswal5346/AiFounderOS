@@ -100,3 +100,30 @@ class RoadmapSection(BaseModel):
 class RoadmapResponse(BaseModel):
     sections: list[RoadmapSection]
     last_updated: str
+
+
+# ── Tasks ─────────────────────────────────────────────────────────────────────
+
+class TaskItem(BaseModel):
+    id: str
+    run_id: str
+    agent: str
+    description: str
+    status: str
+    priority: int = 1
+    requires_approval: bool = False
+    notes: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class TaskCreateRequest(BaseModel):
+    agent_name: str
+    title: str
+    description: Optional[str] = None
+
+
+class TaskListResponse(BaseModel):
+    items: list[TaskItem]
+    total: int
+

@@ -1,8 +1,9 @@
 """
-Memory — RAG Retrieval
+Memory — RAG Retrieval (Gemini Embeddings)
 
 Semantic search over unstructured business documents using pgvector.
-Documents are embedded on ingestion and retrieved via cosine similarity.
+Documents are embedded on ingestion using Google Gemini (gemini-embedding-001, 1536 dimensions)
+and retrieved via pgvector cosine similarity.
 
 Usage:
     # Index a document
@@ -14,36 +15,57 @@ Usage:
 
 from __future__ import annotations
 
+import os
+import json
 import logging
 from typing import Any
 
-from openai import AsyncOpenAI
+from google import genai
+from google.genai import types
 from sqlalchemy import select, text
 from db.connection import get_db
 from db.models import MemoryLong
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM = 1536
 
 
 async def embed_text(text_content: str) -> list[float]:
     """
-    Generate an embedding vector for a text string using OpenAI.
+    Generate an embedding vector for a text string using Google Gemini embeddings.
 
     Args:
-        text_content: Text to embed
+        text_content: Text string to embed
 
     Returns:
-        Embedding vector as list of floats
+        1536-dimensional embedding vector as list of floats
     """
-    client = AsyncOpenAI()
-    response = await client.embeddings.create(
-        model=EMBEDDING_MODEL,
-        input=text_content,
-    )
-    return response.data[0].embedding
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is not set.")
+
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=text_content,
+            config=types.EmbedContentConfig(
+                output_dimensionality=EMBEDDING_DIM,
+            ),
+        )
+        embedding = response.embeddings[0].values
+
+        if len(embedding) != EMBEDDING_DIM:
+            raise ValueError(
+                f"Expected embedding dimension {EMBEDDING_DIM}, got {len(embedding)}"
+            )
+
+        return embedding
+    except Exception as e:
+        logger.error(f"Gemini embedding generation failed: {e}")
+        raise
 
 
 async def index_document(
@@ -59,8 +81,6 @@ async def index_document(
         content: Document text content
         metadata: Optional metadata dict (stored as JSON in value field)
     """
-    import json
-
     embedding = await embed_text(content)
 
     value_data = {"content": content, "metadata": metadata or {}}
@@ -103,8 +123,6 @@ async def retrieve_context(
     Returns:
         List of dicts with 'key', 'content', 'similarity', 'metadata'
     """
-    import json
-
     query_embedding = await embed_text(query)
 
     async with get_db() as db:
@@ -149,3 +167,36 @@ async def retrieve_context(
         )
 
     return results
+
+
+async def reindex_all_memories() -> int:
+    """
+    Re-indexes all existing long-term memory entries using Gemini embeddings.
+    Preserves all keys, content, and metadata while updating embedding vectors.
+
+    Returns:
+        Number of re-indexed document records
+    """
+    async with get_db() as db:
+        result = await db.execute(select(MemoryLong))
+        records = result.scalars().all()
+
+        reindexed_count = 0
+        for record in records:
+            if not record.value:
+                continue
+
+            try:
+                value_data = json.loads(record.value)
+                content = value_data.get("content", record.value)
+            except (json.JSONDecodeError, TypeError):
+                content = record.value
+
+            new_embedding = await embed_text(content)
+            record.embedding = new_embedding
+            reindexed_count += 1
+
+        await db.commit()
+
+    logger.info(f"Successfully re-indexed {reindexed_count} memory documents with Gemini embeddings.")
+    return reindexed_count

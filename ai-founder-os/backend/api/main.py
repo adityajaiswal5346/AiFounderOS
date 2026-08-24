@@ -11,8 +11,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
+from dotenv import load_dotenv
 
-from api.routes import digest, approvals, roadmap, memory
+REPO_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(REPO_ROOT / ".env")
+
+from api.routes import digest, approvals, roadmap, memory, tasks
 from orchestration.scheduler import scheduler
 
 
@@ -45,6 +50,7 @@ app.include_router(digest.router, prefix="/api/digest", tags=["digest"])
 app.include_router(approvals.router, prefix="/api/approvals", tags=["approvals"])
 app.include_router(roadmap.router, prefix="/api/roadmap", tags=["roadmap"])
 app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
+app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 
 
 @app.get("/health")

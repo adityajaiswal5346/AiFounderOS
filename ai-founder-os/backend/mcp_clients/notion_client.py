@@ -1,7 +1,7 @@
 """
 MCP Client — Notion
 
-Create and query tasks in a Notion database.
+Create and query tasks in a Notion database via official MCP stdio transport.
 Used by the Operations Agent.
 """
 
@@ -9,118 +9,38 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
-
-from notion_client import AsyncClient
+import shutil
+import sys
+from .mcp_session import list_tools, call_tool
 
 logger = logging.getLogger(__name__)
 
+# Resolve npx command on Windows/Linux or fallback to python FastMCP stdio server
+npx_cmd = shutil.which("npx") or shutil.which("npx.cmd")
 
-def _get_client() -> AsyncClient:
-    return AsyncClient(auth=os.environ["NOTION_API_KEY"])
-
-
-async def create_notion_task(
-    title: str,
-    description: str,
-    assignee: str = "",
-    due_date: str = "",
-    database_id: str | None = None,
-) -> dict[str, Any]:
-    """
-    Create a new task page in a Notion database.
-
-    Args:
-        title: Task title
-        description: Task description (added as a paragraph block)
-        assignee: Name of the person responsible
-        due_date: ISO 8601 date string (YYYY-MM-DD)
-        database_id: Override the default NOTION_DATABASE_ID env var
-
-    Returns:
-        Notion API page object
-    """
-    database_id = database_id or os.environ["NOTION_DATABASE_ID"]
-    client = _get_client()
-
-    properties: dict[str, Any] = {
-        "Name": {"title": [{"text": {"content": title}}]},
-        "Status": {"select": {"name": "Not Started"}},
-    }
-
-    if assignee:
-        properties["Assignee"] = {"rich_text": [{"text": {"content": assignee}}]}
-
-    if due_date:
-        properties["Due Date"] = {"date": {"start": due_date}}
-
-    page = await client.pages.create(
-        parent={"database_id": database_id},
-        properties=properties,
-        children=[
-            {
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": {
-                    "rich_text": [{"type": "text", "text": {"content": description}}]
-                },
-            }
-        ],
-    )
-    logger.info(f"Created Notion task '{title}' (id: {page['id']})")
-    return page
+if npx_cmd:
+    NOTION_MCP_COMMAND = npx_cmd
+    NOTION_MCP_ARGS = ["-y", "@modelcontextprotocol/server-notion"]
+else:
+    NOTION_MCP_COMMAND = sys.executable
+    NOTION_MCP_ARGS = ["-m", "mcp_clients.notion_mcp_server"]
 
 
-async def get_notion_tasks(
-    status: str = "in_progress",
-    database_id: str | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Query tasks from a Notion database filtered by status.
+def _notion_env() -> dict:
+    """Prepare environment for the Notion MCP server subprocess."""
+    env = os.environ.copy()
+    if "NOTION_API_KEY" in env:
+        env["NOTION_TOKEN"] = env["NOTION_API_KEY"]
+    return env
 
-    Args:
-        status: Filter by Status property value
-        database_id: Override default NOTION_DATABASE_ID
 
-    Returns:
-        List of simplified task dicts
-    """
-    database_id = database_id or os.environ["NOTION_DATABASE_ID"]
-    client = _get_client()
+async def list_notion_tools() -> list[dict]:
+    """Discover available tools from the Notion MCP server."""
+    logger.info(f"Discovering tools from Notion MCP server ({NOTION_MCP_COMMAND})...")
+    return await list_tools(NOTION_MCP_COMMAND, NOTION_MCP_ARGS, _notion_env())
 
-    status_map = {
-        "not_started": "Not Started",
-        "in_progress": "In Progress",
-        "blocked": "Blocked",
-        "done": "Done",
-    }
-    notion_status = status_map.get(status, status)
 
-    response = await client.databases.query(
-        database_id=database_id,
-        filter={"property": "Status", "select": {"equals": notion_status}},
-    )
-
-    tasks = []
-    for page in response.get("results", []):
-        props = page.get("properties", {})
-        tasks.append(
-            {
-                "id": page["id"],
-                "title": (
-                    props.get("Name", {})
-                    .get("title", [{}])[0]
-                    .get("text", {})
-                    .get("content", "")
-                ),
-                "status": props.get("Status", {}).get("select", {}).get("name", ""),
-                "assignee": (
-                    props.get("Assignee", {})
-                    .get("rich_text", [{}])[0]
-                    .get("text", {})
-                    .get("content", "")
-                ),
-                "due_date": props.get("Due Date", {}).get("date", {}).get("start", ""),
-            }
-        )
-    return tasks
+async def call_notion_tool(tool_name: str, tool_input: dict) -> dict:
+    """Execute a tool on the Notion MCP server."""
+    logger.info(f"Executing Notion MCP tool: {tool_name}")
+    return await call_tool(NOTION_MCP_COMMAND, NOTION_MCP_ARGS, _notion_env(), tool_name, tool_input)

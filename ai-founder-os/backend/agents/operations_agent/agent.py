@@ -1,78 +1,73 @@
-"""
-Operations Agent — Main Agent Loop
+import os
 
-ReAct-style agent that executes operations tasks:
-- Notion task creation and status checks
-- Document generation (SOPs, briefs, meeting notes)
-- Slack notifications (with approval gate)
-"""
+from sqlalchemy.ext.asyncio import AsyncSession
+from observability.tracing import observe
 
-from __future__ import annotations
+from .prompts import OPERATIONS_SYSTEM_PROMPT
+from .tools import get_tool_definitions, execute_tool
+from guardrails.approval_gate import ApprovalPending
+from db.repository import task_repository, outcome_repository
+from db.models import Task
 
-from typing import Any
+from langchain_core.messages import SystemMessage, HumanMessage
+from .graph import build_ops_graph
 
-from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import create_react_agent
+MAX_ITERATIONS = 5
 
-from agents.operations_agent.prompts import OPERATIONS_SYSTEM
-from agents.operations_agent.tools import OPERATIONS_TOOLS
-from memory.long_term import get_company_profile
-from observability.tracing import get_tracer
+ops_graph = build_ops_graph()
 
 
-async def run_operations_agent(
-    tasks: list[dict[str, Any]],
-    run_id: str,
-) -> dict[str, Any]:
-    """
-    Execute the operations agent for a given set of tasks.
-
-    Args:
-        tasks: List of task dicts from the CEO planner
-        run_id: Unique ID for this daily run (used in tracing)
-
-    Returns:
-        dict with 'output' (summary string), 'completed_tasks', 'pending_approvals'
-    """
-    tracer = get_tracer()
-
-    with tracer.start_as_current_span(f"operations_agent.run:{run_id}"):
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
-        company_context = await get_company_profile()
-
-        task_str = "\n".join(
-            f"{i+1}. {t['task']} (priority: {t['priority']})"
-            for i, t in enumerate(tasks)
-        )
-
-        agent = create_react_agent(
-            model=llm,
-            tools=OPERATIONS_TOOLS,
-        )
-
-        result = await agent.ainvoke(
-            {
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": OPERATIONS_SYSTEM.format(
-                            company_context=company_context,
-                            tasks=task_str,
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": "Execute today's operations tasks.",
-                    },
-                ]
-            }
-        )
-
-        final_message = result["messages"][-1].content
-
+@observe(name="operations_run_task")
+async def run_operations_task(db: AsyncSession, task: Task) -> dict:
+    """Runs the LangGraph ReAct loop for a single Operations task."""
+    
+    initial_messages = [
+        SystemMessage(content=OPERATIONS_SYSTEM_PROMPT),
+        HumanMessage(content=f"Task Details: {task.description or 'No additional details.'}")
+    ]
+    
+    # We pass recursion_limit=MAX_ITERATIONS to the config to enforce our old loop limit
+    from observability.tracing import get_langfuse_callback
+    config = {"recursion_limit": MAX_ITERATIONS}
+    
+    cb = get_langfuse_callback()
+    if cb:
+        config["callbacks"] = [cb]
+        
+    try:
+        final_state = await ops_graph.ainvoke({
+            "db": db,
+            "task": task,
+            "messages": initial_messages,
+            "status": "running",
+            "summary": ""
+        }, config=config)
+        
         return {
-            "agent": "operations",
-            "run_id": run_id,
-            "output": final_message,
-            "tasks_given": tasks,
+            "status": final_state["status"],
+            "summary": final_state["summary"]
         }
+    except Exception as e:
+        # If it hits recursion limit, it raises GraphRecursionError
+        if type(e).__name__ == "GraphRecursionError":
+            return {"status": "incomplete", "summary": "Max iterations reached without completion."}
+        raise e
+
+
+@observe(name="operations_run_all_pending")
+async def run_all_pending_operations_tasks(db: AsyncSession):
+    tasks = await task_repository.get_tasks_by_agent(db, agent_name="operations", status="pending")
+    results = []
+
+    for task in tasks:
+        result = await run_operations_task(db, task)
+        await task_repository.update_task_status(
+            db, task.id, status=result["status"], output={"summary": result["summary"]}
+        )
+        await outcome_repository.log_outcome(
+            db, task_id=task.id, result_summary=result["summary"],
+            success=(result["status"] == "completed"),
+        )
+        results.append(result)
+
+    return results

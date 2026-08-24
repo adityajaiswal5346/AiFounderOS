@@ -40,85 +40,40 @@ except ImportError:
     LANGFUSE_ENABLED = False
     langfuse_client = None
     logger.warning("Langfuse not installed — tracing disabled")
+    
+    def observe(*args, **kwargs):
+        def decorator(fn):
+            return fn
+        return decorator
 
 
-def get_tracer():
+def get_langfuse_callback():
     """
-    Get the Langfuse tracer instance (or a no-op stub if tracing is disabled).
-
+    Get the Langfuse Langchain callback handler if tracing is enabled.
+    Can be passed into the config of any Langchain/Langgraph invocation.
+    
     Returns:
-        Langfuse client or NoOpTracer
+        LangfuseCallbackHandler or None
     """
-    if LANGFUSE_ENABLED and langfuse_client:
-        return langfuse_client
-    return NoOpTracer()
+    if LANGFUSE_ENABLED:
+        try:
+            from langfuse.callback import CallbackHandler
+            return CallbackHandler(
+                public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
+                secret_key=os.environ["LANGFUSE_SECRET_KEY"],
+                host=os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
+            )
+        except ImportError:
+            return None
+    return None
 
-
-class NoOpTracer:
-    """
-    No-op tracer stub for when Langfuse is not available.
-    Implements the minimal context manager interface.
-    """
-
-    def start_as_current_span(self, name: str, **kwargs):
-        return NoOpSpan()
-
-
-class NoOpSpan:
-    """No-op span context manager."""
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-
-# ── Decorators for manual instrumentation ──────────────────────────────────────
-
-def trace_agent_run(agent_name: str):
-    """
-    Decorator to trace an entire agent run as a Langfuse trace.
-
-    Usage:
-        @trace_agent_run("marketing")
-        async def run_marketing_agent(tasks, run_id):
-            ...
-    """
-    if not LANGFUSE_ENABLED:
-        return lambda fn: fn  # no-op if tracing is disabled
-
-    def decorator(fn):
-        return observe(name=f"{agent_name}_agent_run")(fn)
-
-    return decorator
-
-
-def trace_tool_call(tool_name: str):
-    """
-    Decorator to trace a tool invocation as a Langfuse span.
-
-    Usage:
-        @trace_tool_call("search_trends")
-        async def search_trends(query: str):
-            ...
-    """
-    if not LANGFUSE_ENABLED:
-        return lambda fn: fn
-
-    def decorator(fn):
-        return observe(name=f"tool.{tool_name}")(fn)
-
-    return decorator
-
-
-# ── Context helpers ────────────────────────────────────────────────────────────
-
+# Keep get_current_trace_id helper
 def get_current_trace_id() -> str | None:
     """Get the current Langfuse trace ID, if available."""
     if not LANGFUSE_ENABLED:
         return None
     try:
+        from langfuse.decorators import langfuse_context
         return langfuse_context.get_current_trace_id()
     except Exception:
         return None

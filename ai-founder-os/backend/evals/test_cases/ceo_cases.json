@@ -1,0 +1,76 @@
+[
+  {
+    "id": "ceo_001",
+    "description": "CEO synthesis includes all agent outcomes",
+    "input": {
+      "agent_outputs": {
+        "marketing": "Drafted a post about AI productivity.",
+        "sales": "Qualified 5 leads.",
+        "operations": "Created 2 Notion tasks."
+      },
+      "pending_approvals": [],
+      "conflicts": [],
+      "resolutions": []
+    },
+    "expected": {
+      "must_not_crash": true,
+      "semantic_criteria": [
+        "The output must summarize the marketing output.",
+        "The output must summarize the sales output.",
+        "The output must summarize the operations output."
+      ]
+    }
+  },
+  {
+    "id": "ceo_002",
+    "description": "Conflict detection triggers on contradictory statements",
+    "input": {
+      "agent_outputs": {
+        "marketing": "We are targeting Enterprise customers only.",
+        "sales": "I am ignoring Enterprise leads and focusing strictly on SMBs.",
+        "operations": "No tasks."
+      }
+    },
+    "expected": {
+      "must_not_crash": true,
+      "must_detect_conflicts": true,
+      "conflict_involved_agents": ["marketing", "sales"]
+    }
+  },
+  {
+    "id": "ceo_003",
+    "description": "Empty outcomes do not crash the CEO digest",
+    "input": {
+      "agent_outputs": {
+        "marketing": "",
+        "sales": "",
+        "operations": ""
+      },
+      "pending_approvals": [],
+      "conflicts": [],
+      "resolutions": []
+    },
+    "expected": {
+      "must_not_crash": true,
+      "output_word_count_min": 10
+    }
+  },
+  {
+    "id": "ceo_004",
+    "description": "Compatible outcomes produce no conflicts and skip arbitration",
+    "input": {
+      "agent_outputs": {
+        "marketing": "We are targeting Enterprise customers.",
+        "sales": "I am reaching out to Enterprise leads.",
+        "operations": "I set up the Enterprise Notion board."
+      },
+      "pending_approvals": [],
+      "conflicts": [],
+      "resolutions": []
+    },
+    "expected": {
+      "must_not_crash": true,
+      "must_detect_conflicts": false
+    }
+  }
+]

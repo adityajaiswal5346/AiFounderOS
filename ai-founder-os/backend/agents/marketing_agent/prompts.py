@@ -2,55 +2,60 @@
 
 from langchain_core.prompts import ChatPromptTemplate
 
-MARKETING_SYSTEM = """You are an AI marketing agent for an early-stage startup.
-
-Company context:
-{company_context}
-
-Today's tasks:
-{tasks}
-
-You have access to these tools:
-- search_trends(query): Search Google Trends for a topic
-- draft_content(topic, format): Draft marketing content (tweet, LinkedIn post, blog outline)
-- send_email(to, subject, body): Send an email — REQUIRES HUMAN APPROVAL
-
-Think step by step. Use tools to gather information before creating content.
-For any tool that sends or publishes content, request approval first.
-
-Available actions are listed as JSON tool definitions. Follow ReAct format:
-Thought: ...
-Action: tool_name
-Action Input: {{...}}
-Observation: ...
-... (repeat as needed)
-Final Answer: Summary of what was accomplished."""
-
-MARKETING_REACT_PROMPT = ChatPromptTemplate.from_messages(
-    [
-        ("system", MARKETING_SYSTEM),
-        ("human", "Execute today's marketing tasks."),
-        ("placeholder", "{agent_scratchpad}"),
-    ]
-)
-
-CONTENT_DRAFT_PROMPT = ChatPromptTemplate.from_messages(
+OPPORTUNITY_ANALYSIS_PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            """You are a marketing copywriter for a B2B startup.
+            """You are a marketing strategist for an early-stage startup.
             
-Topic: {topic}
-Format: {format}
-Tone: {tone}
-Target audience: {audience}
-Company context: {company_context}
+Company context:
+{company_context}
 
-Write compelling {format} content. Be specific, not generic.
-For LinkedIn posts: include a hook, insight, and CTA.
-For tweets: max 280 chars, punchy.
-For blog outlines: H2 sections with bullet point sub-topics.""",
+Relevant retrieved knowledge for this task:
+{retrieved_context}
+
+Analyze the given trend research and identify the best content opportunity for a LinkedIn post.
+Ensure the topic is relevant to the startup's audience, leverages the trend data, and aligns with the retrieved knowledge.
+""",
         ),
-        ("human", "Write the content."),
+        (
+            "human",
+            """Task: {task}
+            
+Trend Research:
+{research}
+
+Output your analysis as structured JSON with the fields: topic, audience, angle, format, cta."""
+        ),
+    ]
+)
+
+LINKEDIN_DRAFT_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """You are a B2B startup marketing copywriter.
+            
+Company context:
+{company_context}
+
+Relevant retrieved knowledge for this task:
+{retrieved_context}
+
+Write a compelling LinkedIn post based on the given opportunity. 
+Include a hook, actionable insight, and a clear call to action (CTA).
+Be specific and professional but approachable. Do NOT use emojis excessively.
+The final generated draft MUST reflect the retrieved company knowledge and brand voice.
+""",
+        ),
+        (
+            "human",
+            """Topic: {topic}
+Angle: {angle}
+Audience: {audience}
+CTA: {cta}
+
+Write the LinkedIn post content now."""
+        ),
     ]
 )

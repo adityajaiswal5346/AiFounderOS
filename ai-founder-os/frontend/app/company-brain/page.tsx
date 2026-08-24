@@ -1,128 +1,80 @@
 "use client";
 
-import { useState, useEffect } from "react";
-
-interface MemoryEntry {
-  key: string;
-  value: string;
-  updated_at: string;
-}
+import useSWR from "swr";
+import { useState } from "react";
+import { fetcher, postApi } from "../../lib/api";
+import { Card, PageHeader, Badge, Button, Input } from "../../components/ui";
 
 export default function CompanyBrainPage() {
-  const [entries, setEntries] = useState<MemoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searching, setSearching] = useState(false);
+  const { data, error, isLoading, mutate } = useSWR("/memory/", fetcher);
+  const [searchResults, setSearchResults] = useState<any>(null);
 
-  useEffect(() => {
-    fetchMemory();
-  }, []);
-
-  async function fetchMemory() {
-    try {
-      const response = await fetch("http://localhost:8000/api/memory/?limit=50");
-      if (!response.ok) throw new Error("Failed to fetch");
-      const data = await response.json();
-      setEntries(data);
-    } catch (err) {
-      console.error("Failed to fetch memory:", err);
-    } finally {
-      setLoading(false);
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      setSearchResults(null);
+      return;
     }
-  }
-
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
-
-    setSearching(true);
     try {
-      const response = await fetch("http://localhost:8000/api/memory/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, top_k: 5 }),
-      });
-      if (!response.ok) throw new Error("Search failed");
-      const data = await response.json();
-      setSearchResults(data.results);
+      const res = await postApi("/memory/search", { query: searchQuery, top_k: 5 });
+      setSearchResults(res.results);
     } catch (err) {
-      console.error("Search error:", err);
-    } finally {
-      setSearching(false);
+      alert("Search failed.");
     }
-  }
+  };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-gray-500">Loading company brain...</p>
-      </div>
-    );
-  }
+  const displayData = searchResults !== null ? searchResults : data;
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Company Brain</h1>
-        <p className="text-gray-600 text-sm mt-1">Long-term memory and knowledge base</p>
-      </header>
-
-      {/* Semantic Search */}
-      <div className="bg-white shadow rounded-lg p-6 mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Semantic Search</h2>
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <input
-            type="text"
+    <div style={{ animation: "fadeIn 0.5s ease-out" }}>
+      <PageHeader 
+        title="Company Brain" 
+        subtitle="Shared memory, knowledge, and brand guidelines for all agents."
+      >
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <Input 
+            placeholder="Search memory..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search company knowledge..."
-            className="flex-1 border border-gray-300 rounded px-4 py-2 focus:outline-none focus:border-blue-500"
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            style={{ width: "250px" }}
           />
-          <button
-            type="submit"
-            disabled={searching}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-medium disabled:opacity-50"
-          >
-            {searching ? "Searching..." : "Search"}
-          </button>
-        </form>
+          <Button variant="secondary" onClick={handleSearch}>Search</Button>
+        </div>
+      </PageHeader>
 
-        {searchResults.length > 0 && (
-          <div className="mt-6 space-y-3">
-            <h3 className="font-semibold text-gray-900">Results:</h3>
-            {searchResults.map((result, idx) => (
-              <div key={idx} className="border border-gray-200 rounded p-3 bg-gray-50">
-                <p className="text-sm font-semibold text-gray-900">{result.key}</p>
-                <p className="text-sm text-gray-700 mt-1">{result.content.slice(0, 200)}...</p>
-                <p className="text-xs text-gray-500 mt-2">
-                  Similarity: {(result.similarity * 100).toFixed(1)}%
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {isLoading && <p style={{ color: "var(--text-muted)" }}>Loading memory...</p>}
+      {error && (
+        <Card style={{ borderColor: "var(--danger)" }}>
+          <p style={{ color: "var(--danger)" }}>Failed to load memory: {error.message}</p>
+        </Card>
+      )}
 
-      {/* All Memory Entries */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">All Memory Entries</h2>
-        {entries.length === 0 ? (
-          <p className="text-gray-500">No memory entries yet. Run seed_onboarding.py to populate.</p>
-        ) : (
-          <div className="space-y-3">
-            {entries.map((entry) => (
-              <div key={entry.key} className="bg-white shadow-sm rounded-lg p-4 border border-gray-200">
-                <h3 className="font-semibold text-gray-900">{entry.key}</h3>
-                <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{entry.value.slice(0, 300)}</p>
-                {entry.value.length > 300 && <span className="text-gray-400 text-sm">...</span>}
-                <p className="text-xs text-gray-400 mt-3">
-                  Updated: {new Date(entry.updated_at).toLocaleString()}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
+      {displayData && displayData.length === 0 && (
+        <Card style={{ textAlign: "center", padding: "3rem 1rem", borderStyle: "dashed" }}>
+          <p style={{ color: "var(--text-muted)" }}>No knowledge stored yet.</p>
+        </Card>
+      )}
+
+      <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
+        {displayData && displayData.map((item: any, idx: number) => (
+          <Card key={item.key || idx} className="glass-panel" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <h3 style={{ margin: "0", fontSize: "1.125rem", color: "var(--text-primary)", wordBreak: "break-all" }}>
+                {item.key || "Unnamed Entry"}
+              </h3>
+              {item.distance !== undefined && (
+                <Badge variant="primary">Match: {(1 - item.distance).toFixed(2)}</Badge>
+              )}
+            </div>
+            
+            <div style={{ backgroundColor: "rgba(0,0,0,0.2)", padding: "1rem", borderRadius: "var(--radius-md)", flex: 1 }}>
+              <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>
+                {item.value || item.content}
+              </p>
+            </div>
+          </Card>
+        ))}
       </div>
     </div>
   );

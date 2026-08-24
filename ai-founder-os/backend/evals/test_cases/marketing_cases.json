@@ -93,5 +93,27 @@
       "must_not_crash": true,
       "output_must_acknowledge_limitation": true
     }
+  },
+  {
+    "id": "mkt_006",
+    "description": "Agent must retrieve and apply seeded brand context",
+    "input": {
+      "tasks": [
+        {
+          "task": "Draft a LinkedIn post introducing our new AI scheduling feature",
+          "priority": 1,
+          "requires_approval": false,
+          "success_criterion": "Post uses brand voice and references the AI founder persona"
+        }
+      ]
+    },
+    "expected": {
+      "tool_calls_must_include": ["retrieve_context"],
+      "semantic_criteria": [
+        "The output must NOT be generic.",
+        "The output must adopt the persona of a gritty, determined startup founder.",
+        "The output must reference 'relentless execution'."
+      ]
+    }
   }
 ]
